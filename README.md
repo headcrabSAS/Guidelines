@@ -35,8 +35,8 @@ Convention de nommage · `var` · Getters/Setters · Propriétés · `sealed`
 ### [swift.md](swift.md) — Spécificités Swift
 Convention de nommage · Optionals · Error handling · Protocoles
 
-### [api.md](api.md) — Design d'API
-*(à venir)*
+### [api.md](api.md) — API REST
+Nommage des endpoints · Verbes HTTP · Codes de statut · Format des réponses · Gestion des erreurs · Versioning · Authentification · Pagination · Filtrage et tri · Patterns côté client
 
 ---
 
