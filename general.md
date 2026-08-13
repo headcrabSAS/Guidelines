@@ -28,6 +28,7 @@ Pour les spécificités par langage, consultez les fichiers dédiés :
 - [Programmation défensive](#programmation-défensive)
 - [Strings](#strings)
 - [Types abstraits](#types-abstraits)
+- [Principes SOLID](#principes-solid)
 - [Flags de compilation](#flags-de-compilation)
 - [Async / Await](#async--await)
 - [Git](#git)
@@ -77,18 +78,33 @@ Les interfaces représentent une relation **"can do"** : ce qu'une classe _peut 
 ICanMove, ICanDie, ICanFight, ICanCollect
 ```
 
-Le préfixe `I` majuscule est conservé par convention et facilite la distinction rapide entre classe de base et interface dans une signature.
+Le préfixe `I` majuscule est conservé pour distinguer rapidement une interface d'une classe de base dans une signature.
 
-> Il existe un débat sur ce préfixe hérité de la notation hongroise. Nous acceptons d'autres conventions du moment qu'elles sont **cohérentes** avec le reste du projet.
+> Il existe un débat sur ce préfixe hérité de la notation hongroise.
+
+> **Débat sur le nommage** : deux écoles s'affrontent.
+>
+> La convention classique préconise un suffixe `-able`, `-er` ou `-or` : `Serializable`, `Printable`, `IEnumerator`... Le problème, c'est que ces noms décrivent souvent une capacité générique sans préciser ce qu'elle fait concrètement dans le contexte du projet.
+>
+> Notre choix est de privilégier **la précision** : l'interface doit décrire exactement ce que la classe peut faire, pas une capacité abstraite. `ICanSerializeToJson` est plus clair que `ISerializable`. `ICanMove` dit exactement ce qu'il faut savoir.
+>
+> Nous acceptons d'autres conventions, du moment qu'elles sont **cohérentes** dans le projet et que le nom reste précis.
 
 ### Classes de base
 
 Une classe dédiée à l'héritage porte le suffixe **Base**.
 
 ```csharp
-UnitBase → FlightUnit, GroundUnit      // Ce sont des units
-CollectibleBase → Coin, Ammo, LifePack // Ce sont des collectibles
+UnitBase → FlightUnit, GroundUnit
+CollectibleBase → Coin, Ammo, LifePack
 ```
+
+**Faut-il reprendre le nom de la classe de base dans les héritiers ?** La règle est que le nom de la classe enfant doit être **auto-descriptif**. Inclure le nom de la base ou non est laissé à l'appréciation selon ce qui apporte le plus de clarté.
+
+- `FlightUnit`, `GroundUnit` → garder "Unit" aide, il fait partie de l'identité de l'objet
+- `Coin`, `Ammo`, `LifePack` → ajouter "Collectible" (`CoinCollectible`) serait redondant, le nom se suffit à lui-même
+
+Le critère : **est-ce que le nom est clair sans contexte ?** Si oui, pas besoin de répéter la base.
 
 ### Collections
 
@@ -144,7 +160,7 @@ if (myCondition)
 // ❌ — Le lecteur doit garder en mémoire toutes les conditions imbriquées
 private void ProcessOrder(Order order)
 {
-    if (order != null)
+    if (order is not null)
     {
         if (order.IsValid)
         {
@@ -214,7 +230,7 @@ Des fonctions courtes sont plus faciles à lire, à tester et à réutiliser.
 
 ## Taille des classes
 
-Il n'y a pas de règle absolue, mais une classe qui dépasse ~300-400 lignes est souvent le signe qu'elle a trop de responsabilités. C'est un signal, pas une obligation de refactoring immédiat.
+Il n'y a pas de règle absolue, mais une classe qui dépasse ~500 lignes est souvent le signe qu'elle a trop de responsabilités. C'est un signal, pas une obligation de refactoring immédiat.
 
 Interroge-toi : est-ce que ma classe pourrait être décrite en une phrase sans utiliser "et" ? Si non, elle fait probablement trop de choses.
 
@@ -264,18 +280,21 @@ Toute classe qui n'est pas conçue pour être héritée **doit être scellée** 
 
 **Sur `sealed` en particulier** : sceller une classe par défaut, c'est un choix de conception explicite. Enlever `sealed` le jour où l'héritage devient nécessaire coûte une seconde. Découvrir qu'une classe non prévue pour l'héritage a été héritée dans un endroit inattendu peut coûter beaucoup plus.
 
+> Ce principe est lié au **O** de SOLID : _Open/Closed Principle_. Une classe est **ouverte** à l'extension (via composition, interfaces, injection) mais **fermée** à la modification directe de son implémentation interne. `sealed` matérialise la partie "fermée". Voir [Principes SOLID](#principes-solid).
+
 ---
 
 ## Booléens
 
-Préférez **toujours des booléens positifs**. Un booléen négatif force le lecteur à effectuer une double négation mentale.
+Préférez **toujours des booléens positifs**, même si ce booléen est systématiquement utilisé sous sa forme négative dans le code. Il vaut mieux écrire `!canShoot` à chaque fois que d'avoir un booléen négatif qui impose une double négation mentale.
 
 ```csharp
-// ✅
+// ✅ — Le nom est positif, la négation est explicite et lisible
 private bool canShoot = false;
 if (!canShoot) { ... }  // "si je ne peux pas tirer" — clair
 
-// ❌
+// ❌ — Même si `cannotFly` est toujours utilisé sous forme négative,
+//      le résultat est une double négation qui force le cerveau à recalculer
 private bool cannotFly = true;
 if (!cannotFly) { ... } // "si je ne peux pas ne pas voler" 😵
                         // → Renommer en `canFly`
@@ -293,7 +312,7 @@ if (elapsedSeconds > 86400) { ... }
 for (int i = 0; i < 3; i++) { ... }
 if (role == "ADM") { ... }
 
-// ✅
+// ✅ — Avec une constante nommée
 private const int K_SECONDS_PER_DAY = 86_400;
 private const int K_MAX_RETRY_COUNT = 3;
 private const string K_ADMIN_ROLE = "ADM";
@@ -303,13 +322,27 @@ for (int i = 0; i < K_MAX_RETRY_COUNT; i++) { ... }
 if (role == K_ADMIN_ROLE) { ... }
 ```
 
+Quand les valeurs représentent un **ensemble fini d'états**, préférez une **enum** plutôt qu'une constante — elle groupe les valeurs liées et empêche d'en passer une invalide.
+
+```csharp
+// ❌ — Des strings magiques, rien n'empêche une faute de frappe
+if (role == "ADM") { ... }
+if (role == "USR") { ... }
+
+// ✅ — L'enum ferme l'ensemble des valeurs possibles
+enum UserRole { Admin, User, Moderator }
+if (role == UserRole.Admin) { ... }
+```
+
+**Un magic number qui nécessite un commentaire pour être compris est la preuve que le code n'est pas bon** — c'est le signal qu'il faut extraire une constante ou une enum. Voir [Commentaires](#commentaires).
+
 **Pourquoi ?** Un magic number ne documente ni son origine ni son intention. Quelqu'un qui voit `86400` doit le calculer mentalement ; quelqu'un qui voit `K_SECONDS_PER_DAY` comprend immédiatement. Et quand la valeur change, il n'y a qu'un seul endroit à modifier.
 
 ---
 
 ## Documentation
 
-Toute fonction **doit être documentée** via le système de documentation du langage. La documentation n'est pas un commentaire — c'est le contrat de la fonction.
+Toute fonction **doit être documentée** via le système de documentation du langage. La documentation n'est pas un commentaire — c'est le **contrat** de la fonction.
 
 L'IDE affiche cette documentation au survol, sans que le lecteur ait besoin d'ouvrir le fichier source. C'est le premier outil de compréhension d'une codebase.
 
@@ -337,7 +370,23 @@ private bool CanPerformAction(PlayerAction action)
 func canPerform(_ action: PlayerAction) -> Bool { ... }
 ```
 
-La documentation doit décrire **ce que fait** la fonction, **ce qu'elle attend** et **ce qu'elle retourne** — pas comment elle le fait. L'implémentation peut changer ; le contrat doit rester stable.
+**Python — docstring entre `"""`**
+
+```python
+def can_perform_action(action: PlayerAction) -> bool:
+    """
+    Determines whether the player can perform an action based on current state.
+
+    Args:
+        action: The action to evaluate.
+
+    Returns:
+        True if the action can be performed, False otherwise.
+    """
+    ...
+```
+
+La documentation décrit **ce que fait** la fonction, **ce qu'elle attend** et **ce qu'elle retourne** — pas comment elle le fait. L'implémentation peut changer ; le contrat doit rester stable.
 
 ---
 
@@ -359,7 +408,7 @@ counter++;  // Starts at 1: SAP does not support zero-based indexing
 if (target == null) { ... }
 
 // ✅ — Documente une règle métier complexe
-// A session expires after 24h of inactivity, not 24h after creation (product decision)
+// Session expires after 24h of inactivity, not 24h after creation (product decision — see #142)
 if (elapsedSinceLastAction > K_SESSION_TIMEOUT) { ... }
 ```
 
@@ -367,7 +416,9 @@ if (elapsedSinceLastAction > K_SESSION_TIMEOUT) { ... }
 
 - Expliquer **pourquoi** un choix a été fait (et non un choix plus évident)
 - Documenter une **règle métier** non triviale
-- Documenter une **limitation technique** ou un contournement (avec idéalement un lien vers le ticket/issue)
+- Documenter une **limitation technique** ou un contournement, idéalement avec un lien vers le ticket
+
+**Si tu ressens le besoin d'ajouter un commentaire pour expliquer un magic number, c'est le signe qu'il faut le remplacer par une constante nommée.** Voir [Constantes et Magic Numbers](#constantes-et-magic-numbers).
 
 **Les commentaires ne servent pas à versionner le code.** Supprimez le code commenté "au cas où". Git est là pour ça.
 
@@ -390,9 +441,9 @@ if (elapsedSinceLastAction > K_SESSION_TIMEOUT) { ... }
 
 - Trouver rapidement si un import est déjà présent.
 - Éviter les doublons.
-- En **C/C++**, l'ordre des `#include` a un impact réel sur les temps de compilation (precompiled headers, headers auto-suffisants). Une convention stable évite les réorganisations accidentelles qui cassent ces optimisations.
+- En **C/C++**, l'ordre des `#include` a un impact réel sur les temps de compilation (precompiled headers, self-sufficiency des headers). Une convention stable évite les réorganisations accidentelles qui cassent ces optimisations. En C# ou Swift, c'est avant tout une question de lisibilité.
 
-La plupart des IDEs peuvent trier automatiquement :
+La plupart des IDEs trient automatiquement :
 
 - Visual Studio : `Ctrl + R, Ctrl + G`
 - Xcode : via un plugin ou manuellement
@@ -410,7 +461,7 @@ Quand vous comparez avec une constante, placez la **constante en premier**.
 if (100 == score) { ... }
 if (null == user) { ... }
 
-// ❌ — Une faute de frappe en C/C++ assigne 100 à score et retourne toujours true
+// ❌ — En C/C++, une faute de frappe assigne 100 à score et retourne toujours true
 if (score = 100) { ... }
 ```
 
@@ -430,7 +481,39 @@ if (address is null || address.User is null)
 return address.User;
 ```
 
-> Pour Unity spécifiquement, voir [unity.md](unity.md) — Unity override `==` pour gérer les GameObjects détruits, ce qui impose d'utiliser `==` plutôt que `is`.
+**Pourquoi `is null` plutôt que `== null` ?** L'opérateur `==` peut être surchargé — une classe peut redéfinir ce que signifie "être égal à null". `is null` est un pattern match qui vérifie l'identité référentielle pure, sans passer par une surcharge possible. C'est plus prévisible, et c'est la raison pour laquelle Unity impose `==` (il surcharge justement `==` pour gérer les GameObjects détruits — voir [unity.md](unity.md)).
+
+### Validation des entrées
+
+Toute donnée qui vient de l'extérieur est **non fiable par défaut** : saisie utilisateur, paramètres d'URL, lecture de fichier, réponse d'API tierce. Elle doit être validée avant d'être utilisée.
+
+Validez **à l'entrée du système** — longueur, format, plage de valeurs, type. Plus la validation est proche de la source, moins il y a de risque de propager une donnée invalide dans le reste du code.
+
+```csharp
+// ❌ — On fait confiance à l'entrée sans vérification
+public void SetPlayerName(string name)
+{
+    this.playerName = name;
+}
+
+// ✅ — On valide avant d'accepter
+public void SetPlayerName(string name)
+{
+    if (string.IsNullOrWhiteSpace(name))
+    {
+        throw new ArgumentException("Player name cannot be empty.");
+    }
+
+    if (name.Length > K_MAX_NAME_LENGTH)
+    {
+        throw new ArgumentException($"Player name cannot exceed {K_MAX_NAME_LENGTH} characters.");
+    }
+
+    this.playerName = name;
+}
+```
+
+> **Note sur le taint tracking** : un concept plus avancé consiste à "teinter" (_taint_) les données d'origine externe et à vérifier qu'elles sont assainies avant d'être utilisées dans des contextes sensibles (requêtes SQL, commandes système, affichage HTML...). C'est une pratique que nous souhaitons approfondir — cette section sera mise à jour.
 
 ---
 
@@ -478,6 +561,24 @@ private void ProcessItems(IEnumerable<Order> orders) { ... }
 
 Ce principe s'applique aussi aux paramètres : une fonction qui n'a besoin que d'itérer n'a pas à imposer un `List<T>` — elle accepte n'importe quelle collection si on lui passe un `IEnumerable<T>`.
 
+> Ce principe est lié au **L** de SOLID : _Liskov Substitution Principle_. Un sous-type doit pouvoir se substituer à son type parent sans casser le comportement attendu. En pratique : si tu dépends de `IEnumerable<T>` plutôt que de `List<T>`, n'importe quelle collection peut être passée — tableau, set, résultat de requête LINQ — sans changer le code appelant. Voir [Principes SOLID](#principes-solid).
+
+---
+
+## Principes SOLID
+
+SOLID est un acronyme qui regroupe cinq principes de conception orientée objet. Ils apparaissent à plusieurs endroits de ce document et sont rappelés ici pour référence.
+
+| Lettre | Principe                | En résumé                                                                                                                                                         |
+| ------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S**  | _Single Responsibility_ | Une classe = une responsabilité. Si elle fait plusieurs choses, elle doit être découpée.                                                                          |
+| **O**  | _Open/Closed_           | Une classe est ouverte à l'**extension** (nouveaux comportements via composition ou interfaces), mais fermée à la **modification** de son implémentation interne. |
+| **L**  | _Liskov Substitution_   | Un sous-type doit pouvoir remplacer son type parent sans casser le comportement attendu.                                                                          |
+| **I**  | _Interface Segregation_ | Plusieurs interfaces spécifiques valent mieux qu'une interface générale. Une classe ne doit pas être forcée d'implémenter ce qu'elle n'utilise pas.               |
+| **D**  | _Dependency Inversion_  | Dépendre des abstractions, pas des implémentations concrètes. Une classe ne devrait pas instancier ses dépendances — elle devrait les recevoir.                   |
+
+Ces principes ne sont pas des règles à appliquer mécaniquement. Ce sont des guides pour identifier quand une conception peut être améliorée. Un code qui les respecte est généralement plus facile à tester, à faire évoluer et à comprendre.
+
 ---
 
 ## Flags de compilation
@@ -522,46 +623,30 @@ private async Task LoadData() { ... }
 private async void OnButtonClick(object sender, EventArgs e) { ... }
 ```
 
-### Nommage
-
-Les méthodes async portent le suffixe **Async**.
-
-```csharp
-public async Task<User> GetUserAsync(int userId) { ... }
-public async Task SaveOrderAsync(Order order) { ... }
-```
-
-**Pourquoi ?** Rend immédiatement visible à l'appelant qu'il doit utiliser `await`. Sans suffixe, on peut oublier d'attendre et obtenir une `Task` à la place du résultat attendu.
-
-### CancellationToken
-
-Les opérations longues doivent accepter un `CancellationToken` pour permettre l'annulation.
-
-```csharp
-// ✅
-public async Task<Report> GenerateReportAsync(
-    ReportParameters parameters,
-    CancellationToken cancellationToken = default)
-{
-    var data = await FetchDataAsync(parameters, cancellationToken);
-    // ...
-}
-```
-
 ### Fire-and-forget : à éviter
 
 Lancer une tâche sans l'awaiter fait disparaître silencieusement toute exception qu'elle lève.
 
 ```csharp
 // ❌ — Exception silencieusement perdue
-_ = SendEmailAsync(user);
+_ = SendNotificationAsync(user);
 
-// ✅ — Si on ne peut pas awaiter, logguer au minimum
-_ = SendEmailAsync(user).ContinueWith(
-    t => logger.LogError(t.Exception, "Email send failed"),
+// ✅ — Si on ne peut pas awaiter, au minimum logguer l'échec
+_ = SendNotificationAsync(user).ContinueWith(
+    t => logger.LogError(t.Exception, "Notification send failed"),
     TaskContinuationOptions.OnlyOnFaulted
 );
 ```
+
+### Annulation coopérative
+
+Les opérations longues doivent supporter l'annulation. L'appelant doit pouvoir demander l'arrêt propre d'une opération en cours, sans l'interrompre brutalement.
+
+Le mécanisme est spécifique au langage — voir [csharp.md](csharp.md) pour `CancellationToken` et [swift.md](swift.md) pour la cancellation des `Task`.
+
+### Nommage des méthodes async
+
+Le suffixe et les conventions de nommage pour les méthodes async sont spécifiques au langage — voir [csharp.md](csharp.md) et [swift.md](swift.md).
 
 ---
 
@@ -569,17 +654,20 @@ _ = SendEmailAsync(user).ContinueWith(
 
 ### Branches
 
+Les noms de branches sont en **kebab-case** (minuscules, mots séparés par des tirets).
+
 Préfixez vos branches selon leur nature :
 
-| Préfixe     | Usage                                       | Exemple                                                 |
-| ----------- | ------------------------------------------- | ------------------------------------------------------- |
-| `feature/`  | Nouvelle fonctionnalité                     | `feature/player-dash`                                   |
-| `fix/`      | Correction de bug                           | `fix/123-score-overflow` (référencer le numéro d'issue) |
-| `refactor/` | Refactoring sans changement de comportement | `refactor/cleanup-inventory-system`                     |
-| `docs/`     | Documentation uniquement                    | `docs/update-api-guidelines`                            |
-| `chore/`    | Tâches techniques (CI, dépendances...)      | `chore/update-unity-2022`                               |
+| Préfixe             | Usage                                       | Exemple                             |
+| ------------------- | ------------------------------------------- | ----------------------------------- |
+| `feature/`          | Nouvelle fonctionnalité                     | `feature/player-dash`               |
+| `fix/` ou `bugfix/` | Correction de bug planifiée                 | `bugfix/123-score-overflow`         |
+| `hotfix/`           | Correction urgente en production            | `hotfix/crash-on-startup`           |
+| `refactor/`         | Refactoring sans changement de comportement | `refactor/cleanup-inventory-system` |
+| `docs/`             | Documentation uniquement                    | `docs/update-api-guidelines`        |
+| `chore/`            | Tâches techniques (CI, dépendances…)        | `chore/update-dependencies`         |
 
-**Pourquoi ?** On identifie en un coup d'œil la nature d'une branche dans la liste. Un reviewer sait à quoi s'attendre avant même d'ouvrir la PR.
+**Pourquoi ?** On identifie en un coup d'œil la nature et la priorité d'une branche. Un `hotfix/` signale immédiatement une urgence ; un `fix/` référencé avec le numéro d'issue permet de relier le commit au problème rapporté.
 
 **Règles :**
 
@@ -623,13 +711,19 @@ Closes #42
 - Si une PR n'est pas prête à être reviewée, préfixez son titre avec **`[WIP]`** ou passez-la en **Draft**.
 - Le titre de la PR suit le même format que les commits : court, précis, impératif.
 - Liez la PR à l'issue correspondante (`Closes #XX`).
-- En tant qu'**auteur** : relisez votre propre PR avant de demander une review. Annotez les parties qui nécessitent une attention particulière.
-- En tant que **reviewer** : les remarques portent sur le code, pas sur la personne. Distinguez ce qui est bloquant de ce qui est une suggestion.
+- En tant qu'**auteur** : relisez votre propre PR avant de demander une review. Annotez les parties qui nécessitent une attention particulière ou qui sont des choix délibérés.
+
+**En tant que reviewer :**
+
+- Vérifiez que le code respecte les guidelines du projet. C'est l'un des objectifs explicites de la code review.
+- Les remarques portent sur le **code**, pas sur la personne.
+- Distinguez ce qui est **bloquant** de ce qui est une **suggestion** — un préfixe comme `[bloquant]` ou `[nit]` évite les ambiguïtés.
+- **N'hésitez pas à signaler tout ce qui ne va pas, même s'il y a beaucoup à dire.** Une review complète fait progresser le développeur. Ce n'est pas une attaque personnelle — c'est ce qui fait monter le niveau collectif. Une remarque passée sous silence pour ne pas vexer est un problème qui reviendra.
 
 ### Ce qu'on ne commite jamais
 
 - Des **secrets** : clés d'API, mots de passe, tokens, chaînes de connexion
 - Des **fichiers de configuration locale** : `.env`, fichiers d'IDE personnels (`.idea/`, `.vscode/` si non partagé intentionnellement)
-- Des **artefacts de build** : `bin/`, `obj/`, `*.dll` générés
+- Des **artefacts de build** : `bin/`, `obj/`, fichiers générés
 
-En cas de commit accidentel d'un secret, **révoquer la clé immédiatement** — effacer le commit n'est pas suffisant si la branche a été poussée.
+En cas de commit accidentel d'un secret, **révoquer la clé immédiatement** — effacer le commit ne suffit pas si la branche a été poussée.
