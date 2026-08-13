@@ -51,26 +51,56 @@ Une valeur d'enum sans son préfixe de type peut être ambiguë dans certains co
 
 ## var
 
-`var` est autorisé **uniquement quand le type est littéralement écrit sur la même ligne**, c'est-à-dire lors d'une construction `new` ou d'un cast explicite.
+La règle dépend de la version de C# ciblée par le projet. **Vérifiez la version cible avant de choisir.**
+
+### C# 9+ — Typage explicite + `new()`
+
+**Ne jamais utiliser `var`.** Toujours déclarer le type explicitement, et utiliser `new()` (target-typed new) pour éviter la répétition à la construction.
 
 ```csharp
-// ✅ — Le type est écrit à droite, var évite la répétition
+// ✅ — Type explicite à gauche, new() évite la répétition à droite
+Player player = new();
+List<Enemy> enemies = new();
+Dictionary<Guid, Order> orderById = new();
+int score = 100;
+
+// ✅ — Type explicite, new typé. Redondant inutilement mais autorisé
+Player player = new Player();
+List<Enemy> enemies = new List<Enemy>();
+Dictionary<Guid, Order> orderById = new Dictionary<Guid, Order>();
+
+// ✅ — Type explicite pour les retours de méthode
+User user = GetCurrentUser();
+List<ComponentDto> components = service.GetComponents();
+
+// ❌ — var interdit
+var player = new Player();
+var user = GetCurrentUser();
+var score = 100;
+```
+
+**Pourquoi ?** `new()` résout le seul problème légitime de `var` — éviter `Player player = new Player()`. Avec `new()`, il n'y a plus de raison d'utiliser `var` : le type est toujours visible, la règle est sans exception, et le code est lisible en PR sans IDE.
+
+### Avant C# 9 — Convention Microsoft
+
+`var` est autorisé quand le type est **immédiatement apparent** à la lecture de la ligne, sans avoir à consulter la signature de la méthode appelée.
+On évite cette convention à partir de C# 9, même si c'est celle officiellement utilisée par Microsoft, car elle créée une inconsistence avec certaines variables en `var` et d'autres typées explicitement.
+
+```csharp
+// ✅ — Le type est visible sur la même ligne
 var player = new Player();
 var enemies = new List<Enemy>();
 var config = (GameConfig)rawConfig;
+var score = 100;
 
-// ❌ — Le type n'est pas visible sans ouvrir la définition de la méthode
+// ❌ — Le type n'est pas visible sans ouvrir la définition
 var user = GetCurrentUser();
 var components = service.GetComponents();
 
-// ✅ — Type explicite : lisible sans IDE, lisible en code review
+// ✅ — Type explicite obligatoire
 User user = GetCurrentUser();
 List<ComponentDto> components = service.GetComponents();
 ```
-
-**Pourquoi cette règle ?** La règle "var quand c'est évident" est subjective : ce qui est évident pour l'auteur ne l'est pas forcément pour le reviewer, ni pour quelqu'un qui lit la PR sur GitHub sans hover d'IDE. En limitant `var` aux cas où le type est écrit sur la même ligne, la règle devient objective et vérifiable en deux secondes.
-
-`var` ne s'utilise que pour les **variables locales**. Les membres de classe, les paramètres et les types de retour sont toujours déclarés avec leur type explicite.
 
 ---
 
@@ -83,8 +113,6 @@ Pour un accès simple à un membre (lire ou écrire sans logique additionnelle),
 ```csharp
 // ✅ — Lecture publique, écriture privée
 public int Score { get; private set; }
-
-// ✅ — Lecture seule depuis l'extérieur
 public string PlayerName { get; private set; }
 
 // ✅ — Read-only (assignable uniquement dans le constructeur)
@@ -122,18 +150,18 @@ player.Score = 100;        // ✅ private set, modifiable depuis l'intérieur de
 player.Id = Guid.NewGuid(); // ❌ erreur de compilation — init-only
 ```
 
-**Règle** : si une propriété n'a pas besoin de changer après construction, utilisez `init`. C'est un contrat explicite d'immuabilité qui le compilateur fait respecter.
+**Règle** : si une propriété n'a pas besoin de changer après construction, utilisez `init`. C'est un contrat explicite d'immuabilité que le compilateur fait respecter.
 
 ### `const` vs `static readonly`
 
 Ces deux formes déclarent des valeurs fixes, mais elles ont des comportements différents :
 
-| | `const` | `static readonly` |
-|---|---|---|
-| Évaluation | Compile-time | Runtime (premier accès à la classe) |
-| Types autorisés | Primitifs, `string`, `enum` | N'importe quel type |
-| Peut être calculé | Non | Oui |
-| Risque en lib partagée | ⚠️ Valeur inlinée | ✅ Valeur lue à l'exécution |
+|                        | `const`                     | `static readonly`                   |
+| ---------------------- | --------------------------- | ----------------------------------- |
+| Évaluation             | Compile-time                | Runtime (premier accès à la classe) |
+| Types autorisés        | Primitifs, `string`, `enum` | N'importe quel type                 |
+| Peut être calculé      | Non                         | Oui                                 |
+| Risque en lib partagée | ⚠️ Valeur inlinée           | ✅ Valeur lue à l'exécution         |
 
 ```csharp
 // const — pour les valeurs primitives simples qui ne changeront jamais
@@ -186,7 +214,8 @@ private int score = 0;
 ```
 
 **Pourquoi ?** Deux raisons liées à la lisibilité :
-- En lisant `private int score`, on sait immédiatement et sans contexte que ce membre est privé. Sans le mot-clé, il faut connaître les règles de visibilité par défaut de C# — une connaissance qu'on ne peut pas supposer chez tous les lecteurs.
+
+- En lisant `private int score`, on sait immédiatement et sans contexte que ce membre est privé. Sans le mot-clé, il faut connaître les règles de visibilité par défaut de C# — une connaissance qu'on ne peut pas supposer chez tous les lecteurs. (On peut avoir des reviewers qui ne connaissent pas le C# mais qui sont mendatés pour l'application des guidelines par exemple.)
 - Dans un bloc de déclarations mixtes (certaines `public`, d'autres `private`, d'autres `protected`), l'absence du mot-clé crée une asymétrie visuelle qui ralentit la lecture.
 
 ---
@@ -374,11 +403,15 @@ var count = results.Count;
 var first = results[0];
 ```
 
-### Préférez un Dictionary à un `.Where()` dans une boucle
+### Préférez un Dictionary ou un Lookup à un `.Where()` dans une boucle
 
 Chercher un élément avec `.Where()` ou `.FirstOrDefault()` à l'intérieur d'une boucle est une opération **O(n²)** : pour chaque élément de la boucle externe, on parcourt toute la collection interne.
 
-Si vous avez besoin de faire des lookups répétés dans une collection, construisez un `Dictionary` une seule fois avant la boucle pour passer à **O(n)**.
+Si vous avez besoin de faire des lookups répétés dans une collection, construisez un index une seule fois avant la boucle pour passer à **O(n)**.
+
+#### `ToDictionary` — relation un-à-un
+
+Un `Dictionary` associe **une clé à une seule valeur**. Si deux éléments partagent la même clé, `ToDictionary` lève une exception.
 
 ```csharp
 // ❌ — O(n²) : pour chaque order, on parcourt toute la liste users
@@ -401,6 +434,36 @@ foreach (var order in orders)
 ```
 
 `TryGetValue` est préféré à l'indexeur `dict[key]` car il ne lève pas d'exception si la clé est absente.
+
+#### `ToLookup` — relation un-à-plusieurs
+
+Quand **plusieurs éléments partagent la même clé** (une commande → plusieurs articles, un utilisateur → plusieurs sessions...), `ToDictionary` n'est pas utilisable. C'est le rôle de `ToLookup`.
+
+Un `Lookup<TKey, TElement>` est l'équivalent d'un `Dictionary<TKey, IEnumerable<TElement>>`, mais avec deux avantages importants :
+
+- Il **ne lève jamais d'exception** si la clé est dupliquée — il regroupe les valeurs.
+- Son indexeur retourne une **collection vide** pour une clé absente, sans exception (contrairement au Dictionary).
+
+```csharp
+// Relation un-à-plusieurs : un userId peut avoir plusieurs orders
+ILookup<Guid, Order> ordersByUser = orders.ToLookup(o => o.UserId);
+
+foreach (var user in users)
+{
+    // Retourne toujours une collection, vide si l'utilisateur n'a pas de commandes
+    IEnumerable<Order> userOrders = ordersByUser[user.Id];
+    ProcessOrders(user, userOrders);
+}
+```
+
+|                 | `ToDictionary` | `ToLookup`         |
+| --------------- | -------------- | ------------------ |
+| Relation        | Un-à-un        | Un-à-plusieurs     |
+| Clés dupliquées | ❌ Exception   | ✅ Regroupées      |
+| Clé absente     | ❌ Exception   | ✅ Collection vide |
+| Mutable         | ✅             | ❌ Immuable        |
+
+**Règle** : si la clé est garantie unique → `ToDictionary`. Si plusieurs éléments peuvent partager la même clé → `ToLookup`.
 
 ### Évitez les LINQ dans les boucles chaudes
 
