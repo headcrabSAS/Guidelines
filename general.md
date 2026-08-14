@@ -7,6 +7,7 @@ Pour les spécificités par langage, consultez les fichiers dédiés :
 - [C#](csharp.md)
 - [Unity](unity.md)
 - [Swift](swift.md)
+- [API REST](api.md)
 
 ---
 
