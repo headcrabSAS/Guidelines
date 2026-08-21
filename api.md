@@ -124,13 +124,13 @@ N'utilisez **pas uniquement** `200` et `500`. Les codes HTTP communicent l'inten
 
 ### 2xx — Succès
 
-| Code                | Quand l'utiliser                                                                         |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `200 OK`            | Requête réussie avec corps de réponse (GET, PATCH, PUT)                                  |
-| `201 Created`       | Ressource créée (POST). Inclure un header `Location` pointant vers la nouvelle ressource |
-| `202 Accepted`      | Traitement async d'une requête en cours                                                  |
-| `204 No Content`    | Requête réussie sans corps de réponse (DELETE, certains PUT)                             |
-| `207 Multi-Status`  | Opération bulk où chaque item a son propre statut (création ou modification par lot)     |
+| Code               | Quand l'utiliser                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `200 OK`           | Requête réussie avec corps de réponse (GET, PATCH, PUT)                                  |
+| `201 Created`      | Ressource créée (POST). Inclure un header `Location` pointant vers la nouvelle ressource |
+| `202 Accepted`     | Traitement async d'une requête en cours                                                  |
+| `204 No Content`   | Requête réussie sans corps de réponse (DELETE, certains PUT)                             |
+| `207 Multi-Status` | Opération bulk où chaque item a son propre statut (création ou modification par lot)     |
 
 Un endpoint bulk retourne **toujours `207`**, que tous les items réussissent, que tous échouent, ou que les statuts soient mixtes. Le code HTTP indique la nature de la réponse (bulk), pas le résultat des items — c'est leur statut individuel qui le porte. Cela évite au client de brancher sa logique de parsing sur le code HTTP de la réponse.
 
@@ -157,10 +157,10 @@ Un endpoint bulk retourne **toujours `207`**, que tous les items réussissent, q
 
 ### 3xx — Redirections
 
-| Code                       | Quand l'utiliser                                                                       |
-| -------------------------- | -------------------------------------------------------------------------------------- |
-| `301 Moved Permanently`    | Endpoint déplacé définitivement. Préférez `308` si le verbe doit être préservé         |
-| `308 Permanent Redirect`   | Endpoint déplacé définitivement, avec préservation du verbe HTTP (POST reste POST)     |
+| Code                     | Quand l'utiliser                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `301 Moved Permanently`  | Endpoint déplacé définitivement. Préférez `308` si le verbe doit être préservé     |
+| `308 Permanent Redirect` | Endpoint déplacé définitivement, avec préservation du verbe HTTP (POST reste POST) |
 
 Le `301` a un comportement hérité des navigateurs : beaucoup de clients HTTP convertissent automatiquement `POST` en `GET` sur la redirection. Le `308` corrige ce problème. Pour les endpoints dépréciés qui acceptent du `POST`, `PATCH` ou `PUT`, utilisez toujours `308`.
 
@@ -170,16 +170,16 @@ Si l'endpoint déprécié n'a pas de remplaçant, retournez `410 Gone` — pas d
 
 ### 4xx — Erreur client
 
-| Code                       | Quand l'utiliser                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| `400 Bad Request`          | Requête malformée, paramètres manquants ou invalides                                       |
-| `401 Unauthorized`         | Non authentifié — token absent ou invalide                                                 |
-| `403 Forbidden`            | Authentifié mais sans permission sur cette ressource                                       |
-| `404 Not Found`            | Ressource introuvable — son existence passée est inconnue                                  |
-| `409 Conflict`             | Conflit d'état (email déjà utilisé, ressource déjà dans cet état...)                       |
-| `410 Gone`                 | Ressource définitivement supprimée — le serveur sait qu'elle a existé et ne reviendra pas  |
-| `422 Unprocessable Entity` | Requête syntaxiquement valide mais sémantiquement incorrecte (validation métier)           |
-| `429 Too Many Requests`    | Rate limiting — inclure un header `Retry-After`                                            |
+| Code                       | Quand l'utiliser                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `400 Bad Request`          | Requête malformée, paramètres manquants ou invalides                                      |
+| `401 Unauthorized`         | Non authentifié — token absent ou invalide                                                |
+| `403 Forbidden`            | Authentifié mais sans permission sur cette ressource                                      |
+| `404 Not Found`            | Ressource introuvable — son existence passée est inconnue                                 |
+| `409 Conflict`             | Conflit d'état (email déjà utilisé, ressource déjà dans cet état...)                      |
+| `410 Gone`                 | Ressource définitivement supprimée — le serveur sait qu'elle a existé et ne reviendra pas |
+| `422 Unprocessable Entity` | Requête syntaxiquement valide mais sémantiquement incorrecte (validation métier)          |
+| `429 Too Many Requests`    | Rate limiting — inclure un header `Retry-After`                                           |
 
 La différence entre `404` et `410` : un `404` peut être temporaire (mauvaise URL, ressource pas encore créée...) ; un `410` est définitif. Un client ou un crawler qui reçoit `410` sait qu'il peut arrêter de retenter. Utilisez `410` pour les endpoints supprimés après dépréciation.
 
@@ -293,8 +293,8 @@ Les codes d'erreur sont **documentés et exhaustifs** — un client ne doit jama
 Versionnez par l'URL, préfixé sur toutes les routes.
 
 ```
-https://api.headcrab.io/v1/users
-https://api.headcrab.io/v2/users
+https://api.headcrab.fr/v1/users
+https://api.headcrab.fr/v2/users
 ```
 
 **Règles :**
@@ -335,7 +335,7 @@ Le CORS (Cross-Origin Resource Sharing) est un mécanisme de sécurité du navig
 ### Headers à configurer côté serveur
 
 ```
-Access-Control-Allow-Origin: https://app.headcrab.io
+Access-Control-Allow-Origin: https://app.headcrab.fr
 Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 Access-Control-Allow-Headers: Authorization, Content-Type
 Access-Control-Max-Age: 86400
@@ -352,12 +352,12 @@ Pour toute requête non-simple (verbes autres que `GET`/`POST`, headers custom c
 
 ```
 OPTIONS /users/42
-Origin: https://app.headcrab.io
+Origin: https://app.headcrab.fr
 Access-Control-Request-Method: PATCH
 Access-Control-Request-Headers: Authorization, Content-Type
 
 → HTTP 204 No Content
-Access-Control-Allow-Origin: https://app.headcrab.io
+Access-Control-Allow-Origin: https://app.headcrab.fr
 Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 Access-Control-Allow-Headers: Authorization, Content-Type
 Access-Control-Max-Age: 86400
@@ -371,9 +371,9 @@ Si l'API est consommée depuis plusieurs domaines (app web, dashboard admin, sta
 
 ```python
 ALLOWED_ORIGINS = {
-    "https://app.headcrab.io",
-    "https://admin.headcrab.io",
-    "https://staging.headcrab.io",
+    "https://app.headcrab.fr",
+    "https://admin.headcrab.fr",
+    "https://staging.headcrab.fr",
 }
 
 def cors_origin(request_origin: str) -> str | None:
