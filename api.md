@@ -124,24 +124,55 @@ N'utilisez **pas uniquement** `200` et `500`. Les codes HTTP communicent l'inten
 
 ### 2xx — Succès
 
-| Code             | Quand l'utiliser                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `200 OK`         | Requête réussie avec corps de réponse (GET, PATCH, PUT)                                  |
-| `201 Created`    | Ressource créée (POST). Inclure un header `Location` pointant vers la nouvelle ressource |
-| `202 Accepted`   | Traitement async d'une requête en cours                                                  |
-| `204 No Content` | Requête réussie sans corps de réponse (DELETE, certains PUT)                             |
+| Code                | Quand l'utiliser                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `200 OK`            | Requête réussie avec corps de réponse (GET, PATCH, PUT)                                  |
+| `201 Created`       | Ressource créée (POST). Inclure un header `Location` pointant vers la nouvelle ressource |
+| `202 Accepted`      | Traitement async d'une requête en cours                                                  |
+| `204 No Content`    | Requête réussie sans corps de réponse (DELETE, certains PUT)                             |
+| `207 Multi-Status`  | Opération bulk où chaque item a son propre statut (création ou modification par lot)     |
+
+Le `207` retourne un tableau de résultats individuels, chacun avec son propre code de statut :
+
+```json
+// POST /users/bulk
+// HTTP 207 Multi-Status
+{
+  "results": [
+    { "id": "1", "status": 201, "data": { "id": "1", "name": "Alice" } },
+    { "id": "2", "status": 409, "error": { "code": "EMAIL_ALREADY_EXISTS", "message": "..." } },
+    { "id": "3", "status": 201, "data": { "id": "3", "name": "Charlie" } }
+  ]
+}
+```
+
+Ne retournez pas `200` pour une opération bulk partielle — le client ne saurait pas qu'une partie a échoué sans lire tout le corps.
+
+### 3xx — Redirections
+
+| Code                       | Quand l'utiliser                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| `301 Moved Permanently`    | Endpoint déplacé définitivement. Préférez `308` si le verbe doit être préservé         |
+| `308 Permanent Redirect`   | Endpoint déplacé définitivement, avec préservation du verbe HTTP (POST reste POST)     |
+
+Le `301` a un comportement hérité des navigateurs : beaucoup de clients HTTP convertissent automatiquement `POST` en `GET` sur la redirection. Le `308` corrige ce problème. Pour les endpoints dépréciés qui acceptent du `POST`, `PATCH` ou `PUT`, utilisez toujours `308`.
+
+Accompagnez toujours une redirection du header `Location` pointant vers le nouvel endpoint, et documentez la date de suppression prévue de l'ancien.
 
 ### 4xx — Erreur client
 
-| Code                       | Quand l'utiliser                                                                 |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| `400 Bad Request`          | Requête malformée, paramètres manquants ou invalides                             |
-| `401 Unauthorized`         | Non authentifié — token absent ou invalide                                       |
-| `403 Forbidden`            | Authentifié mais sans permission sur cette ressource                             |
-| `404 Not Found`            | Ressource introuvable                                                            |
-| `409 Conflict`             | Conflit d'état (email déjà utilisé, ressource déjà dans cet état...)             |
-| `422 Unprocessable Entity` | Requête syntaxiquement valide mais sémantiquement incorrecte (validation métier) |
-| `429 Too Many Requests`    | Rate limiting — inclure un header `Retry-After`                                  |
+| Code                       | Quand l'utiliser                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `400 Bad Request`          | Requête malformée, paramètres manquants ou invalides                                       |
+| `401 Unauthorized`         | Non authentifié — token absent ou invalide                                                 |
+| `403 Forbidden`            | Authentifié mais sans permission sur cette ressource                                       |
+| `404 Not Found`            | Ressource introuvable — son existence passée est inconnue                                  |
+| `409 Conflict`             | Conflit d'état (email déjà utilisé, ressource déjà dans cet état...)                       |
+| `410 Gone`                 | Ressource définitivement supprimée — le serveur sait qu'elle a existé et ne reviendra pas  |
+| `422 Unprocessable Entity` | Requête syntaxiquement valide mais sémantiquement incorrecte (validation métier)           |
+| `429 Too Many Requests`    | Rate limiting — inclure un header `Retry-After`                                            |
+
+La différence entre `404` et `410` : un `404` peut être temporaire (mauvaise URL, ressource pas encore créée...) ; un `410` est définitif. Un client ou un crawler qui reçoit `410` sait qu'il peut arrêter de retenter. Utilisez `410` pour les endpoints supprimés après dépréciation.
 
 ### 5xx — Erreur serveur
 
