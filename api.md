@@ -17,6 +17,7 @@ Ce document couvre les bonnes pratiques de conception et de consommation d'API R
 - [CORS](#cors)
 - [Pagination](#pagination)
 - [Filtrage et tri](#filtrage-et-tri)
+- [Opérations longues](#opérations-longues)
 - [Côté client](#côté-client)
 
 ---
@@ -500,6 +501,65 @@ GET /products?sort=price&order=asc
 
 ---
 
+## Opérations longues
+
+Certaines opérations prennent trop de temps pour une réponse synchrone : export de données volumineuses, génération de rapport, traitement d'image, snapshot d'un compte... Plutôt que d'allonger le timeout et d'espérer, retournez immédiatement un `202 Accepted` et exposez un endpoint de polling.
+
+Un timeout à 60s n'est pas une solution — c'est un symptôme. Si une opération peut dépasser quelques secondes, elle doit être asynchrone. Un `202` en 300ms vaut mieux qu'une connexion ouverte pendant une minute.
+
+### Côté serveur
+
+```
+// 1. Le client déclenche l'opération
+POST /exports/account-history
+→ HTTP 202 Accepted
+{
+  "jobId": "job_a1b2c3",
+  "statusUrl": "/jobs/job_a1b2c3",
+  "retryAfter": 5
+}
+
+// 2. Le client poll à intervalles réguliers
+GET /jobs/job_a1b2c3
+→ HTTP 202 Accepted          (toujours en cours)
+{ "status": "processing", "progress": 42, "retryAfter": 5 }
+
+→ HTTP 200 OK                (terminé)
+{ "status": "completed", "resultUrl": "/exports/job_a1b2c3/download" }
+
+→ HTTP 200 OK                (terminé, erreur métier)
+{ "status": "failed", "error": { "code": "INSUFFICIENT_DATA", "message": "..." } }
+```
+
+- **`retryAfter`** : intervalle de polling recommandé en secondes. Le client doit le respecter — ne pas laisser chaque appelant décider de sa fréquence de polling.
+- **`resultUrl`** : URL directe vers le résultat quand il est prêt. Peut pointer vers un bucket S3 ou similaire pour les fichiers volumineux.
+- **`progress`** : optionnel, mais améliore significativement l'UX quand il est calculable.
+- Le job doit avoir une **durée de vie limitée** côté serveur. Passé un certain délai (ex : 24h), le résultat est supprimé et le job retourne `410 Gone`.
+
+### Côté client
+
+Le client ne doit jamais inventer son propre intervalle de polling — il lit `retryAfter` dans la réponse et attend ce délai.
+
+```swift
+func pollJob(statusUrl: URL) async throws -> JobResult {
+    while true {
+        let response = try await fetch(statusUrl)
+
+        switch response.status {
+        case 200:
+            return try response.decode(JobResult.self)
+        case 202:
+            let retryAfter = response.retryAfter ?? 5
+            try await Task.sleep(for: .seconds(retryAfter))
+        default:
+            throw APIError.unexpected(response.status)
+        }
+    }
+}
+```
+
+---
+
 ## Côté client
 
 ### Toujours gérer les codes d'erreur explicitement
@@ -533,12 +593,47 @@ func handleResponse(_ response: HTTPURLResponse) throws {
 Définissez toujours un timeout. Une requête sans timeout peut bloquer indéfiniment.
 
 ```swift
-// ✅
 var request = URLRequest(url: url)
-request.timeoutInterval = 30  // 30 secondes maximum
+request.timeoutInterval = 10
 ```
 
-Valeurs recommandées : 10-15s pour les requêtes courantes, 30-60s pour les uploads ou opérations longues.
+**5-10s pour les requêtes synchrones.** Si une opération peut dépasser cette fenêtre, elle ne devrait pas être synchrone — utilisez le pattern `202` avec polling (voir [Opérations longues](#opérations-longues)). Un timeout à 60s n'est pas une solution pour une opération lente, c'est un signal de mauvaise conception. La seule exception acceptable est l'upload de fichier, où la durée dépend de la taille et de la connexion.
+
+### Refresh de token sans flood
+
+Quand un token expire, plusieurs requêtes simultanées peuvent recevoir un `401` en même temps. Sans coordination, chacune tenterait son propre refresh — ce qui envoie N requêtes de refresh en parallèle pour le même token et provoque des race conditions.
+
+Un `TokenRefreshCoordinator` centralise ce comportement : dès le premier `401`, il met en queue toutes les requêtes entrantes, effectue **un seul refresh**, puis rejoue toutes les requêtes en attente avec le nouveau token.
+
+```swift
+actor TokenRefreshCoordinator {
+    private var isRefreshing = false
+    private var pendingContinuations: [CheckedContinuation<Void, Error>] = []
+
+    func waitForRefresh(using refreshAction: () async throws -> Void) async throws {
+        if isRefreshing {
+            // Un refresh est déjà en cours — on se met en attente
+            try await withCheckedThrowingContinuation { continuation in
+                pendingContinuations.append(continuation)
+            }
+            return
+        }
+
+        isRefreshing = true
+        do {
+            try await refreshAction()
+            pendingContinuations.forEach { $0.resume() }
+        } catch {
+            pendingContinuations.forEach { $0.resume(throwing: error) }
+            throw error
+        }
+        pendingContinuations.removeAll()
+        isRefreshing = false
+    }
+}
+```
+
+Le client HTTP intercepte les `401`, appelle `waitForRefresh`, puis rejoue la requête originale. Les 14 requêtes qui arrivent pendant le refresh attendent, récupèrent le nouveau token, et repartent — sans avoir chacune déclenché un appel réseau superflu.
 
 ### Retry et idempotence
 
