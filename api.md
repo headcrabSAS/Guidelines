@@ -132,10 +132,19 @@ N'utilisez **pas uniquement** `200` et `500`. Les codes HTTP communicent l'inten
 | `204 No Content`    | Requête réussie sans corps de réponse (DELETE, certains PUT)                             |
 | `207 Multi-Status`  | Opération bulk où chaque item a son propre statut (création ou modification par lot)     |
 
-Le `207` retourne un tableau de résultats individuels, chacun avec son propre code de statut :
+Un endpoint bulk retourne **toujours `207`**, que tous les items réussissent, que tous échouent, ou que les statuts soient mixtes. Le code HTTP indique la nature de la réponse (bulk), pas le résultat des items — c'est leur statut individuel qui le porte. Cela évite au client de brancher sa logique de parsing sur le code HTTP de la réponse.
 
 ```json
-// POST /users/bulk
+// POST /users/bulk — tous réussis
+// HTTP 207 Multi-Status
+{
+  "results": [
+    { "id": "1", "status": 201, "data": { "id": "1", "name": "Alice" } },
+    { "id": "3", "status": 201, "data": { "id": "3", "name": "Charlie" } }
+  ]
+}
+
+// POST /users/bulk — statuts mixtes
 // HTTP 207 Multi-Status
 {
   "results": [
@@ -145,8 +154,6 @@ Le `207` retourne un tableau de résultats individuels, chacun avec son propre c
   ]
 }
 ```
-
-Ne retournez pas `200` pour une opération bulk partielle — le client ne saurait pas qu'une partie a échoué sans lire tout le corps.
 
 ### 3xx — Redirections
 
@@ -158,6 +165,8 @@ Ne retournez pas `200` pour une opération bulk partielle — le client ne saura
 Le `301` a un comportement hérité des navigateurs : beaucoup de clients HTTP convertissent automatiquement `POST` en `GET` sur la redirection. Le `308` corrige ce problème. Pour les endpoints dépréciés qui acceptent du `POST`, `PATCH` ou `PUT`, utilisez toujours `308`.
 
 Accompagnez toujours une redirection du header `Location` pointant vers le nouvel endpoint, et documentez la date de suppression prévue de l'ancien.
+
+Si l'endpoint déprécié n'a pas de remplaçant, retournez `410 Gone` — pas de redirection, pas de 404. Le `410` indique au client qu'il peut arrêter de retenter définitivement.
 
 ### 4xx — Erreur client
 
