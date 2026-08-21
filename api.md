@@ -306,6 +306,24 @@ https://api.headcrab.fr/v2/users
 
 **Pourquoi pas le header ?** `Accept: application/vnd.headcrab.v2+json` est plus "pur" REST mais moins visible, moins testable dans un navigateur, et moins bien supporté par les outils de monitoring et de cache. L'URL est pragmatique et universelle.
 
+### Endpoints inchangés entre versions
+
+Quand une nouvelle version est publiée, **tous les endpoints existent sous la nouvelle version** — le client ne doit jamais avoir à mixer `/v1` et `/v2` dans la même application. Ce serait ingérable côté client et un signal que le versioning est mal structuré.
+
+Le versioning est une **couche de routing**, pas de logique métier. Les endpoints inchangés ne sont pas copiés-collés : le router `/v2` les fait pointer vers les mêmes handlers que `/v1`. Seuls les endpoints modifiés ont un nouveau handler.
+
+```
+GET /v1/users  →  UserHandler.list()
+GET /v2/users  →  UserHandler.list()   // même handler, aucune duplication
+
+GET /v1/orders →  OrderHandlerV1.create()
+GET /v2/orders →  OrderHandlerV2.create()  // comportement modifié
+```
+
+Pour les endpoints remplacés dans la nouvelle version :
+- **L'URL a changé** → le `/v1` redirige en `308` vers l'équivalent `/v2` pendant la période de dépréciation.
+- **L'URL est identique, le comportement change** → le router `/v1` continue de pointer vers l'ancien handler, le `/v2` vers le nouveau. Les deux coexistent le temps de la migration.
+
 ---
 
 ## Authentification
